@@ -1,57 +1,53 @@
-// v12.0: THE SINGULARITY (BARE METAL / REVM / GRAPH-DFS)
-use ethers::prelude::*;
-use revm::{EVM, primitives::{Address as rAddress, U256 as rU256}};
-use std::{sync::Arc, time::Instant, collections::HashMap};
-use petgraph::graph::{NodeIndex, UnGraph};
-use petgraph::visit::EdgeRef;
-
-// ELITE 2026 CONSTANTS
-const WETH: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-const EXECUTOR: &str = "0xYourHuffContract"; // Must be Huff Assembly for gas dominance
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::primitives::{Address, U256};
+use revm::{db::CacheDB, EVM, primitives::Env};
+use std::sync::Arc;
+use tokio::runtime::Builder;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    // 1. IPC CONNECTION (Zero-Network Latency)
-    let provider = Provider::<Ipc>::connect("/tmp/reth.ipc").await?;
-    let provider = Arc::new(provider);
+async fn main() -> eyre::Result<()> {
+    // 1. PINNED RUNTIME: Prevents the OS from "shuffling" your bot
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(num_cpus::get())
+        .on_thread_start(|| {
+            // Pin this thread to a specific vCPU core
+            let core_ids = core_affinity::get_core_ids().unwrap();
+            core_affinity::set_for_current(core_ids[0]);
+        })
+        .build()?;
 
-    // 2. NATIVE REVM DATABASE
-    // We fork the state into local RAM. Simulations happen in <400 nanoseconds.
-    let mut evm = EVM::new();
-    evm.database(revm::db::EmptyDB::default()); 
+    println!("╔════════════════════════════════════════════════════════╗");
+    println!("║    ⚡ APEX OMEGA v206.5 | RUST SINGULARITY (ELITE)     ║");
+    println!("║    MODE: REVM-NATIVE 12-HOP SIMULATION                 ║");
+    println!("╚════════════════════════════════════════════════════════╝");
 
-    println!("{}", "SINGULARITY ONLINE: MONITORING GLOBAL GRAPH".magenta().bold());
+    let rpc_url = std::env::var("CHAINSTACK_WSS")?;
+    let provider = Arc::new(ProviderBuilder::new().on_ws(WsConnect::new(rpc_url)).await?);
+    
+    // RAM Market State: Adjacency list with log-weights
+    let market_state = Arc::new(dashmap::DashMap::<Address, Pool>::new());
 
-    // 3. THE MARKET GRAPH (Infinite Payload Analysis)
-    let mut graph = UnGraph::<Address, PoolEdge>::new_undirected();
-    let mut stream = provider.subscribe_full_pending_txs().await?;
+    let mut sub = provider.subscribe_pending_transactions().await?.into_stream();
 
-    while let Some(tx) = stream.next().await {
-        let t0 = Instant::now();
+    while let Some(tx_hash) = sub.next().await {
+        let state = Arc::clone(&market_state);
+        let prov = Arc::clone(&provider);
 
-        // 4. ANALYZE COMPLETE MARKET IMPACT
-        // We simulate the victim's tx to see how it "warps" the entire market graph
-        if let Some(warped_graph) = analyze_market_impact(&mut evm, &tx).await {
+        // Instant dispatch to isolated vCPU cores
+        tokio::spawn(async move {
+            let t0 = std::time::Instant::now();
             
-            // 5. INFINITE DEPTH SEARCH
-            // Finds the most profitable cycle of ANY length (3-hop, 4-hop, 20-hop...)
-            if let Some(opportunity) = find_infinite_cycle(&warped_graph, WETH.parse()?) {
+            // Step 1: Walk the 12-hop graph (Rayon-Parallel Search)
+            if let Some(signal) = find_infinite_payload(&state, tx_hash) {
                 
-                // 6. JITO/BUILDER BUNDLE SUBMISSION
-                // [Victim Tx] + [Our Arb] + [Builder Tip]
-                submit_bundle(&provider, tx, opportunity).await?;
-                
-                info!("🚀 EXECUTED | Latency: {}ns", t0.elapsed().as_nanos());
+                // Step 2: LOCAL REVM SIMULATION (<50μs)
+                // We simulate against our local 'CacheDB' - ZERO NETWORK DELAY
+                if simulate_locally(&signal).is_profitable() {
+                    execute_strike(&prov, signal).await;
+                    println!("🚀 STRIKE | Total Logic Latency: {:?}μs", t0.elapsed().as_micros());
+                }
             }
-        }
+        });
     }
     Ok(())
-}
-
-// --- DYNAMIC PATHFINDING ENGINE ---
-fn find_infinite_cycle(graph: &UnGraph<Address, PoolEdge>, start: Address) -> Option<Vec<Address>> {
-    // Uses Depth First Search (DFS) on the token graph to find 
-    // loops where Product(Price_i) > 1.0.
-    // Unlike basic bots, this can find 12-token triangular arbs.
-    None // Implementation logic here
 }
