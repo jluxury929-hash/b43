@@ -1,34 +1,23 @@
 [package]
-name = "apex_omega"
-version = "4.2.2"
+name = "apex-rust-singularity"
+version = "206.5.0"
 edition = "2021"
 
 [dependencies]
-# Ethereum & Flashbots
-ethers = { version = "2.0", features = ["ws", "rustls", "abigen"] }
-ethers-flashbots = "0.14"
-
-# Async & Resilience
-tokio = { version = "1.0", features = ["full"] }
-futures-util = "0.3"
-lazy_static = "1.4"
-anyhow = "1.0"
-rand = "0.8"
-
-# Networking & Encoding
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
-url = "2.0"
-hex = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-dotenv = "0.15"
-
-# UI & Math
+# Alloy: 2x faster primitives than ethers-rs
+alloy = { version = "0.1", features = ["full", "rpc-types-eth"] }
+# REVM: The literal fastest EVM implementation (used by Foundry/Anvil)
+revm = { version = "33", features = ["std", "serde", "memory_db"] }
+# Petgraph + Rayon: For 12-hop parallel graph search
 petgraph = "0.6"
-colored = "2.0"
-log = "0.4"
-env_logger = "0.10"
+rayon = "1.8"
+# Low-latency synchronization
+parking_lot = "0.12"
+dashmap = "5.5"
+core_affinity = "0.8" 
 
-[[bin]]
-name = "apex_omega"
-path = "main.rs"
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen_units = 1
+panic = "abort"
